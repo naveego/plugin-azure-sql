@@ -10,6 +10,7 @@ require (
 	github.com/as/hue v0.0.0-20140817061117-4a3906858b4f
 	github.com/avast/retry-go v2.4.2+incompatible
 	github.com/aws/aws-sdk-go v1.38.35 // indirect
+	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/coreos/go-semver v0.3.0
 	github.com/denisenkom/go-mssqldb v0.10.0
 	github.com/dimdin/decimal v0.0.0-20160219162123-26155721110e
@@ -39,7 +40,7 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v1.2.1
 	github.com/tebeka/strftime v0.1.3 // indirect
-	go.etcd.io/bbolt v1.3.2
+	go.etcd.io/bbolt v1.3.0
 	golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf // indirect
 	golang.org/x/net v0.0.0-20210505214959-0714010a04ed
 	google.golang.org/grpc v1.38.0
