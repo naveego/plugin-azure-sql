@@ -15,8 +15,8 @@ func Build() error {
 	cfg := build.PluginConfig{
 		Package: build.Package{
 			VersionString: version.Version.String(),
-			PackagePath:   "github.com/naveego/plugin-mssql-2008",
-			Name:          "plugin-mssql-2008",
+			PackagePath:   "github.com/naveego/plugin-azure-sql",
+			Name:          "plugin-azure-sql",
 			Shrink:        true,
 		},
 		Targets: []build.PackageTarget{

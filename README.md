@@ -1,1 +1,1 @@
-# plugin-mssql-2008
+# plugin-azure-sql
