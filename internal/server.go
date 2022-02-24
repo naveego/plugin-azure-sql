@@ -166,7 +166,7 @@ var configSchemaSchemaJSON string
 func (s *Server) Connect(ctx context.Context, req *pub.ConnectRequest) (*pub.ConnectResponse, error) {
 
 	var err error
-	s.log.Debug("Connecting...")
+	s.log.Info("Connecting...")
 	s.disconnect()
 
 	s.mu.Lock()
@@ -193,51 +193,61 @@ func (s *Server) Connect(ctx context.Context, req *pub.ConnectRequest) (*pub.Con
 		return nil, errors.WithStack(err)
 	}
 
-	originalHost := settings.Host
+	s.log.Info("Validated settings")
 
-	// retry start
-	err = retry.Do(
-		func() error {
-			connectionString, err := settings.GetConnectionString()
-			if err != nil {
+	if !settings.SkipConnectPing {
+		s.log.Info("Preparing to ping")
+
+		originalHost := settings.Host
+
+		// retry start
+		err = retry.Do(
+			func() error {
+				connectionString, err := settings.GetConnectionString()
+				if err != nil {
+					return err
+				}
+				session.Settings = settings
+				session.DB, err = sql.Open("sqlserver", connectionString)
+				if err != nil {
+					return errors.Errorf("could not open connection: %s", err)
+				}
+				err = session.DB.Ping()
 				return err
-			}
-			session.Settings = settings
-			session.DB, err = sql.Open("sqlserver", connectionString)
-			if err != nil {
-				return errors.Errorf("could not open connection: %s", err)
-			}
-			err = session.DB.Ping()
-			return err
-		},
-		retry.RetryIf(func(err error) bool {
-			if strings.Contains(err.Error(), "wsarecv") {
-				var ip = ExtractIPFromWsarecvErr(err.Error())
-				if ip == "" {
-					return false
+			},
+			retry.RetryIf(func(err error) bool {
+				if strings.Contains(err.Error(), "wsarecv") {
+					var ip = ExtractIPFromWsarecvErr(err.Error())
+					if ip == "" {
+						return false
+					}
+
+					settings.Host = ip
+
+					return true
+					//return s.Connect(ctx, pub.NewConnectRequest(settings))
 				}
 
-				settings.Host = ip
+				return false
+				//return nil, errors.Errorf("could not read database schema: %s", err)
+			}),
+			retry.Attempts(2))
 
-				return true
-				//return s.Connect(ctx, pub.NewConnectRequest(settings))
+		// retry end
+		if err != nil {
+			var connectionResponse = new(pub.ConnectResponse)
+			if originalHost != settings.Host {
+				connectionResponse.ConnectionError = fmt.Sprintf("tried original host %q and raw IP %q: %q", originalHost, settings.Host, err.Error())
+				return connectionResponse, nil
 			}
-
-			return false
-			//return nil, errors.Errorf("could not read database schema: %s", err)
-		}),
-		retry.Attempts(2))
-
-	// retry end
-	if err != nil {
-		var connectionResponse = new(pub.ConnectResponse)
-		if originalHost != settings.Host {
-			connectionResponse.ConnectionError = fmt.Sprintf("tried original host %q and raw IP %q: %q", originalHost, settings.Host, err.Error())
+			connectionResponse.ConnectionError = fmt.Sprintf("tried using host %q and port %d: %q", originalHost, settings.Port, err.Error())
 			return connectionResponse, nil
 		}
-		connectionResponse.ConnectionError = fmt.Sprintf("tried using host %q and port %d: %q", originalHost, settings.Port, err.Error())
-		return connectionResponse, nil
+
+		s.log.Info("Pinged successfully")
 	}
+
+	s.log.Info("Preparing to get tables")
 
 	rows, err := session.DB.Query(`SELECT t.TABLE_NAME
      , t.TABLE_SCHEMA
@@ -265,6 +275,8 @@ ORDER BY TABLE_NAME`)
 	if err != nil {
 		return nil, errors.Errorf("could not read database schema: %s", err)
 	}
+
+	s.log.Info("Successfully got tables")
 
 	// Collect table names for display in UIs.
 	for rows.Next() {
@@ -308,6 +320,8 @@ ORDER BY TABLE_NAME`)
 		}
 	}
 
+	s.log.Info("Preparing to get stored procedures")
+
 	rows, err = session.DB.Query("SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE routine_type = 'PROCEDURE'")
 	if err != nil {
 		return nil, errors.Errorf("could not read stored procedures from database: %s", err)
@@ -328,6 +342,8 @@ ORDER BY TABLE_NAME`)
 		session.StoredProcedures = append(session.StoredProcedures, safeName)
 	}
 	sort.Strings(session.StoredProcedures)
+
+	s.log.Info("Successfully got stored procedures")
 
 	s.session = session
 

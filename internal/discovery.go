@@ -54,9 +54,13 @@ func (s *SchemaDiscoverer) DiscoverSchemas(session *OpSession, req *pub.Discover
 	var schemas []*pub.Schema
 
 	if req.Mode == pub.DiscoverSchemasRequest_ALL {
-		s.Log.Debug("Discovering all tables and views...")
-		schemas, err = s.getAllSchemas(session)
-		s.Log.Debug("Discovered tables and views.", "count", len(schemas))
+		if session.Settings.SkipDiscovery {
+			schemas = []*pub.Schema{}
+		} else {
+			s.Log.Debug("Discovering all tables and views...")
+			schemas, err = s.getAllSchemas(session)
+			s.Log.Debug("Discovered tables and views.", "count", len(schemas))
+		}
 
 		if err != nil {
 			return nil, errors.Errorf("could not load tables and views from SQL: %s", err)
