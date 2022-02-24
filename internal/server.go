@@ -247,9 +247,10 @@ func (s *Server) Connect(ctx context.Context, req *pub.ConnectRequest) (*pub.Con
 		s.log.Info("Pinged successfully")
 	}
 
-	s.log.Info("Preparing to get tables")
+	if !settings.SkipDiscovery {
+		s.log.Info("Preparing to get tables")
 
-	rows, err := session.DB.Query(`SELECT t.TABLE_NAME
+		rows, err := session.DB.Query(`SELECT t.TABLE_NAME
      , t.TABLE_SCHEMA
      , t.TABLE_TYPE
      , c.COLUMN_NAME
@@ -272,78 +273,79 @@ FROM INFORMATION_SCHEMA.TABLES AS t
 
 ORDER BY TABLE_NAME`)
 
-	if err != nil {
-		return nil, errors.Errorf("could not read database schema: %s", err)
-	}
-
-	s.log.Info("Successfully got tables")
-
-	// Collect table names for display in UIs.
-	for rows.Next() {
-		var (
-			schema, table, typ, columnName, dataType, isNullable string
-			maxLength                                            sql.NullInt64
-			constraint                                           *string
-			changeTracking                                       bool
-		)
-		err = rows.Scan(&table, &schema, &typ, &columnName, &dataType, &isNullable, &maxLength, &constraint, &changeTracking)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not read table schema")
+			return nil, errors.Errorf("could not read database schema: %s", err)
 		}
-		id := GetSchemaID(schema, table)
-		info, ok := session.SchemaInfo[id]
-		if !ok {
-			info = &meta.Schema{
-				ID:               id,
-				IsTable:          typ == "BASE TABLE",
-				IsChangeTracking: changeTracking,
+
+		s.log.Info("Successfully got tables")
+
+		// Collect table names for display in UIs.
+		for rows.Next() {
+			var (
+				schema, table, typ, columnName, dataType, isNullable string
+				maxLength                                            sql.NullInt64
+				constraint                                           *string
+				changeTracking                                       bool
+			)
+			err = rows.Scan(&table, &schema, &typ, &columnName, &dataType, &isNullable, &maxLength, &constraint, &changeTracking)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read table schema")
 			}
-			session.SchemaInfo[id] = info
-		}
-		columnName = fmt.Sprintf("[%s]", columnName)
-		columnInfo, ok := info.LookupColumn(columnName)
-		if !ok {
-			columnInfo = info.AddColumn(&meta.Column{ID: columnName})
-		}
-		columnInfo.IsKey = columnInfo.IsKey || constraint != nil && *constraint == "PRIMARY KEY"
-		columnInfo.IsDiscovered = true
-		columnInfo.SQLType = dataType
-		columnInfo.IsNullable = strings.ToUpper(isNullable) == "YES"
-		if maxLength.Valid {
-			columnInfo.MaxLength = maxLength.Int64
-			columnInfo.SQLType = fmt.Sprintf("%s(%v)", dataType, maxLength.Int64)
-			if maxLength.Int64 == -1 {
-				columnInfo.SQLType = fmt.Sprintf("%s(max)", dataType)
+			id := GetSchemaID(schema, table)
+			info, ok := session.SchemaInfo[id]
+			if !ok {
+				info = &meta.Schema{
+					ID:               id,
+					IsTable:          typ == "BASE TABLE",
+					IsChangeTracking: changeTracking,
+				}
+				session.SchemaInfo[id] = info
 			}
-		} else {
-			columnInfo.MaxLength = 0
+			columnName = fmt.Sprintf("[%s]", columnName)
+			columnInfo, ok := info.LookupColumn(columnName)
+			if !ok {
+				columnInfo = info.AddColumn(&meta.Column{ID: columnName})
+			}
+			columnInfo.IsKey = columnInfo.IsKey || constraint != nil && *constraint == "PRIMARY KEY"
+			columnInfo.IsDiscovered = true
+			columnInfo.SQLType = dataType
+			columnInfo.IsNullable = strings.ToUpper(isNullable) == "YES"
+			if maxLength.Valid {
+				columnInfo.MaxLength = maxLength.Int64
+				columnInfo.SQLType = fmt.Sprintf("%s(%v)", dataType, maxLength.Int64)
+				if maxLength.Int64 == -1 {
+					columnInfo.SQLType = fmt.Sprintf("%s(max)", dataType)
+				}
+			} else {
+				columnInfo.MaxLength = 0
+			}
 		}
-	}
 
-	s.log.Info("Preparing to get stored procedures")
+		s.log.Info("Preparing to get stored procedures")
 
-	rows, err = session.DB.Query("SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE routine_type = 'PROCEDURE'")
-	if err != nil {
-		return nil, errors.Errorf("could not read stored procedures from database: %s", err)
-	}
-
-	for rows.Next() {
-		var schema, name string
-		var safeName string
-		err = rows.Scan(&schema, &name)
+		rows, err = session.DB.Query("SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE routine_type = 'PROCEDURE'")
 		if err != nil {
-			return nil, errors.Wrap(err, "could not read stored procedure schema")
+			return nil, errors.Errorf("could not read stored procedures from database: %s", err)
 		}
-		if schema == "dbo" {
-			safeName = makeSQLNameSafe(name)
-		} else {
-			safeName = fmt.Sprintf("%s.%s", makeSQLNameSafe(schema), makeSQLNameSafe(name))
-		}
-		session.StoredProcedures = append(session.StoredProcedures, safeName)
-	}
-	sort.Strings(session.StoredProcedures)
 
-	s.log.Info("Successfully got stored procedures")
+		for rows.Next() {
+			var schema, name string
+			var safeName string
+			err = rows.Scan(&schema, &name)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read stored procedure schema")
+			}
+			if schema == "dbo" {
+				safeName = makeSQLNameSafe(name)
+			} else {
+				safeName = fmt.Sprintf("%s.%s", makeSQLNameSafe(schema), makeSQLNameSafe(name))
+			}
+			session.StoredProcedures = append(session.StoredProcedures, safeName)
+		}
+		sort.Strings(session.StoredProcedures)
+
+		s.log.Info("Successfully got stored procedures")
+	}
 
 	s.session = session
 
