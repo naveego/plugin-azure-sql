@@ -195,57 +195,55 @@ func (s *Server) Connect(ctx context.Context, req *pub.ConnectRequest) (*pub.Con
 
 	s.log.Info("Validated settings")
 
-	if !settings.SkipConnectPing {
-		s.log.Info("Preparing to ping")
+	s.log.Info("Preparing to ping")
 
-		originalHost := settings.Host
+	originalHost := settings.Host
 
-		// retry start
-		err = retry.Do(
-			func() error {
-				connectionString, err := settings.GetConnectionString()
-				if err != nil {
-					return err
-				}
-				session.Settings = settings
-				session.DB, err = sql.Open("sqlserver", connectionString)
-				if err != nil {
-					return errors.Errorf("could not open connection: %s", err)
-				}
-				err = session.DB.Ping()
+	// retry start
+	err = retry.Do(
+		func() error {
+			connectionString, err := settings.GetConnectionString()
+			if err != nil {
 				return err
-			},
-			retry.RetryIf(func(err error) bool {
-				if strings.Contains(err.Error(), "wsarecv") {
-					var ip = ExtractIPFromWsarecvErr(err.Error())
-					if ip == "" {
-						return false
-					}
-
-					settings.Host = ip
-
-					return true
-					//return s.Connect(ctx, pub.NewConnectRequest(settings))
+			}
+			session.Settings = settings
+			session.DB, err = sql.Open("sqlserver", connectionString)
+			if err != nil {
+				return errors.Errorf("could not open connection: %s", err)
+			}
+			err = session.DB.Ping()
+			return err
+		},
+		retry.RetryIf(func(err error) bool {
+			if strings.Contains(err.Error(), "wsarecv") {
+				var ip = ExtractIPFromWsarecvErr(err.Error())
+				if ip == "" {
+					return false
 				}
 
-				return false
-				//return nil, errors.Errorf("could not read database schema: %s", err)
-			}),
-			retry.Attempts(2))
+				settings.Host = ip
 
-		// retry end
-		if err != nil {
-			var connectionResponse = new(pub.ConnectResponse)
-			if originalHost != settings.Host {
-				connectionResponse.ConnectionError = fmt.Sprintf("tried original host %q and raw IP %q: %q", originalHost, settings.Host, err.Error())
-				return connectionResponse, nil
+				return true
+				//return s.Connect(ctx, pub.NewConnectRequest(settings))
 			}
-			connectionResponse.ConnectionError = fmt.Sprintf("tried using host %q and port %d: %q", originalHost, settings.Port, err.Error())
+
+			return false
+			//return nil, errors.Errorf("could not read database schema: %s", err)
+		}),
+		retry.Attempts(2))
+
+	// retry end
+	if err != nil {
+		var connectionResponse = new(pub.ConnectResponse)
+		if originalHost != settings.Host {
+			connectionResponse.ConnectionError = fmt.Sprintf("tried original host %q and raw IP %q: %q", originalHost, settings.Host, err.Error())
 			return connectionResponse, nil
 		}
-
-		s.log.Info("Pinged successfully")
+		connectionResponse.ConnectionError = fmt.Sprintf("tried using host %q and port %d: %q", originalHost, settings.Port, err.Error())
+		return connectionResponse, nil
 	}
+
+	s.log.Info("Pinged successfully")
 
 	if !settings.SkipDiscovery {
 		s.log.Info("Preparing to get tables")

@@ -42,7 +42,6 @@
         "password",
         "advancedSettings",
         "skipCustomQueryCount",
-        "skipConnectPing",
         "skipDiscovery"
       ],
       "password": {
@@ -96,11 +95,6 @@
           "type": "boolean",
           "title": "Skip Custom Query Count",
           "description": "Optional performance enhancement to prevent discovering counts on custom queries."
-        },
-        "skipConnectPing": {
-          "type": "boolean",
-          "title": "Skip Connect Ping",
-          "description": "Skips the database ping in connect."
         },
         "skipDiscovery": {
           "type": "boolean",
